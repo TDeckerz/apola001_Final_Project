@@ -70,9 +70,7 @@ typedef struct task {
     int (*TickFct)(int);
 } task;
 
-
 //Button Variables
-unsigned char player_pos_g = 1; //The player is locked to row 1, keep track of current col
 unsigned char off_button_g = 0; //The power switch, pin A2
 unsigned char start_button_g = 0; // The start button, pin A3
 unsigned char pause_button_g = 0; // The pause button, pin A4
@@ -84,6 +82,10 @@ unsigned char enemy_rows_g = 0;
 unsigned char enemy_cols_g = 0;
 unsigned char col_g = 1;
 unsigned char row_g = 1;
+
+//
+unsigned char player_pos_g = 1; //The player is locked to row 1, keep track of current col
+unsigned char shots_fired = 0; //Number of shots already on the field
 
 enum SM1_States { SM1_init, SM1_wait};
 
@@ -127,10 +129,10 @@ int SMTick2(int state){
         case SM2_init:
             break;
         case SM2_display:
-            row_g = 0x01 & enemy_rows_g;
-            col_g = ~(player_pos_g & enemy_cols_g);
+            row_g = 1;
+            col_g = ~(player_pos_g);
             transmit_data_rows(row_g);
-            transmit_data_cols(row_g);
+            transmit_data_cols(col_g);
             break;
         default:
             break;
@@ -221,11 +223,24 @@ int SMTick4(int state){
     return state;
 }
 
-enum SM5_States{SM5_init, SM5_LED_off, SM5_LED_on};
+enum SM5_States{SM5_init, SM5_track_shot};
+int SMTick5(int state){
+    switch(state){
+        case SM5_init:
+            state = SM5_track_shot;
+            break;
+        case SM5_track_shot:
+            state
+    }
+    switch(state){
+        
+    }
+    return state;
+};
 
 int main(void){
     
-    DDRA = 0xFF; PORTA = 0x00; // LCD Control Lines
+    DDRA = 0x03; PORTA = 0xFC; // LCD Control Lines
     DDRB = 0xFF; PORTB = 0x00;
     DDRC = 0x0F; PORTC = 0xF0; // Keypad Input
     DDRD = 0xFF; PORTD = 0x00; // LCD Data lines
