@@ -77,15 +77,19 @@ unsigned char pause_button_g = 0; // The pause button, pin A4
 unsigned char left_button_g = 0; // The left movement button, pin A5
 unsigned char right_button_g = 0; // The right movement button, pin A6
 
+
 //Row/Col variables, track enemy, player, shots.
 unsigned char enemy_rows_g = 0;
 unsigned char enemy_cols_g = 0;
 unsigned char col_g = 1;
 unsigned char row_g = 1;
 
-//
+//Player and enemy positions
 unsigned char player_pos_g = 1; //The player is locked to row 1, keep track of current col
-unsigned char shots_fired = 0; //Number of shots already on the field
+unsigned char bullet_x = 0; //There is a maximum of 5 bullets for the player at any time
+unsigned char bullet_y = 0;
+unsigned char shoot_button_g = 0;
+unsigned char bullet_live = 0; //If the bullet is on the board.
 
 enum SM1_States { SM1_init, SM1_wait};
 
@@ -102,7 +106,7 @@ int SMTick1(int state){
             break;
     }
     switch(state){
-        case SM1_init:
+	        case SM1_init:
             break;
         case SM1_wait:
 
@@ -215,7 +219,7 @@ int SMTick4(int state){
             pause_button_g = ~PINA & 0x10;
             left_button_g = ~PINA & 0x20;
             right_button_g = ~PINA & 0x40;
-            //shoot_button_g = ~PINA & 0x80;
+            shoot_button_g = ~PINA & 0x80;
             break;
         default:
             break;
@@ -223,6 +227,7 @@ int SMTick4(int state){
     return state;
 }
 
+//Updates the bullets movement.
 enum SM5_States{SM5_init, SM5_track_shot};
 int SMTick5(int state){
     switch(state){
@@ -230,10 +235,34 @@ int SMTick5(int state){
             state = SM5_track_shot;
             break;
         case SM5_track_shot:
-            state
+            state = SM5_track_shot;
+            break;
+        default:
+            state = SM5_init;
+            break;
     }
     switch(state){
-        
+        case SM5_init:
+            break;
+        case SM5_track_shot: ;
+            if(!bullet_live && shoot_button_g){ //If there is no bu
+                bullet_live = 1;
+                bullet_x = player_pos_g;
+                bullet_y = 2;
+            }
+            if(bullet_x && bullet_y){ // If the bullet has a valid position.
+                bullet_y = bullet_y << 1;
+            }
+            transmit_data_cols(~bullet_x);
+            transmit_data_rows(bullet_y);
+            if(bullet_y >= 128){
+                bullet_x = 0;
+                bullet_y = 0;
+                bullet_live = 0;
+            }
+            break;
+        default:
+            break;
     }
     return state;
 };
@@ -246,10 +275,10 @@ int main(void){
     DDRD = 0xFF; PORTD = 0x00; // LCD Data lines
     
     unsigned long int SMTick1_calc = 75;
-    unsigned long int SMTick2_calc = 75;
+    unsigned long int SMTick2_calc = 50;
     unsigned long int SMTick3_calc = 50;
-    unsigned long int SMTick4_calc = 50;
-    unsigned long int SMTick5_calc = 50;
+    unsigned long int SMTick4_calc = 75;
+    unsigned long int SMTick5_calc = 100;
 
     unsigned long int tmpGCD = 1;
     tmpGCD = findGCD(SMTick1_calc, SMTick2_calc);
@@ -263,10 +292,11 @@ int main(void){
     unsigned long int SMTick2_period = SMTick2_calc/GCD;
     unsigned long int SMTick3_period = SMTick3_calc/GCD;
     unsigned long int SMTick4_period = SMTick4_calc/GCD;
-    
+    unsigned long int SMTick5_period = SMTick5_calc/GCD;
+
     //Array of task pointers...
-    static task task1, task2, task3, task4;
-    task *tasks[] = {&task1, &task2, &task3, &task4};
+    static task task1, task2, task3, task4, task5;
+    task *tasks[] = {&task1, &task2, &task3, &task4, &task5};
     const unsigned short numTasks =
     sizeof(tasks)/sizeof(task*);
     
@@ -291,10 +321,15 @@ int main(void){
     task4.elapsedTime = SMTick4_period;
     task4.TickFct = &SMTick4;
     
+    task5.state = -1;
+    task5.period = SMTick5_period;
+    task5.elapsedTime = SMTick5_period;
+    task5.TickFct = &SMTick5;
+        
+
     TimerSet(GCD);
     //5LCD_init();
     TimerOn();
-    //transmit_data_cols(255);
     unsigned short i;
     
     while(1){
