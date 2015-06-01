@@ -77,7 +77,6 @@ unsigned char pause_button_g = 0; // The pause button, pin A4
 unsigned char left_button_g = 0; // The left movement button, pin A5
 unsigned char right_button_g = 0; // The right movement button, pin A6
 
-
 //Row/Col variables, track enemy, player, shots.
 unsigned char enemy_rows_g = 0;
 unsigned char enemy_cols_g = 0;
@@ -86,10 +85,21 @@ unsigned char row_g = 1;
 
 //Player and enemy positions
 unsigned char player_pos_g = 1; //The player is locked to row 1, keep track of current col
-unsigned char bullet_x = 0; //There is a maximum of 5 bullets for the player at any time
-unsigned char bullet_y = 0;
+
+unsigned char bullet_x_g = 0; //There is a maximum of 5 bullets for the player at any time
+unsigned char bullet_y_g = 0; // If I shift a char it becomes 0
 unsigned char shoot_button_g = 0;
 unsigned char bullet_live = 0; //If the bullet is on the board.
+
+unsigned char enemy_x[3] = {0}; //The enemy rows
+unsigned char enemy_y[3] = {0}; // The enemies columns
+unsigned char move_left = 0;
+unsigned char move_right = 0;
+
+//game state, score, displays
+unsigned char paused_g = 0;
+unsigned char score = 0;
+unsigned char to_display_g;
 
 enum SM1_States { SM1_init, SM1_wait};
 
@@ -137,6 +147,9 @@ int SMTick2(int state){
             col_g = ~(player_pos_g);
             transmit_data_rows(row_g);
             transmit_data_cols(col_g);
+            transmit_data_cols(~bullet_x_g);
+            transmit_data_rows(bullet_y_g);
+            
             break;
         default:
             break;
@@ -229,6 +242,7 @@ int SMTick4(int state){
 
 //Updates the bullets movement.
 enum SM5_States{SM5_init, SM5_track_shot};
+
 int SMTick5(int state){
     switch(state){
         case SM5_init:
@@ -247,17 +261,15 @@ int SMTick5(int state){
         case SM5_track_shot: ;
             if(!bullet_live && shoot_button_g){ //If there is no bu
                 bullet_live = 1;
-                bullet_x = player_pos_g;
-                bullet_y = 2;
+                bullet_x_g = player_pos_g;
+                bullet_y_g = 1;
             }
-            if(bullet_x && bullet_y){ // If the bullet has a valid position.
-                bullet_y = bullet_y << 1;
+            if(bullet_x_g && bullet_y_g){ // If the bullet has a valid position.
+                bullet_y_g = bullet_y_g << 1;
             }
-            transmit_data_cols(~bullet_x);
-            transmit_data_rows(bullet_y);
-            if(bullet_y >= 128){
-                bullet_x = 0;
-                bullet_y = 0;
+            if(bullet_y_g == 0){
+                bullet_x_g = 0;
+                bullet_y_g = 0;
                 bullet_live = 0;
             }
             break;
@@ -267,6 +279,133 @@ int SMTick5(int state){
     return state;
 };
 
+enum SM6_States {SM6_init, SM6_spawn, SM6_move, SM6_pause};
+
+int SMTick6(int state){
+    switch(state){
+        case SM6_init:
+            state = SM6_spawn;
+            break;
+        case SM6_spawn:
+            enemy_x[0] = 32; enemy_x[1] = 64; enemy_x[2] = 128;
+            enemy_y[0] = 126; enemy_y[1] = 126; enemy_y[2] = 126;
+            if(paused_g == 1){
+                state = SM6_pause;
+            }
+            state = SM6_move;
+            break;
+        case SM6_move:
+            if(paused_g){
+                state = SM6_pause;
+            }
+            break;
+        case SM6_pause:
+            if(paused_g == 1){
+                state = SM6_pause;
+            }
+            else{
+                state = SM6_move;
+            }
+            break;
+        default:
+            state = SM6_init;
+            break;
+    }
+
+    switch (state){
+        case SM6_init:
+            break;
+        case SM6_spawn:
+            move_left = 1; // Begin shifting left.
+            break;
+        case SM6_move:
+            to_display_g = 0;
+            int i;
+            for(i = 0; i < 3; ++i){
+                
+            }
+            transmit_data_rows(0);
+            transmit_data_cols(~enemy_y[0]);
+            transmit_data_cols(~enemy_y[1]);
+            transmit_data_cols(~enemy_y[2]);
+            transmit_data_rows(enemy_x[0] | enemy_x[1] | enemy_x[2]);
+            if(bullet_x_g == enemy_x[0]){
+                if((bullet_y_g & enemy_y[0]) != 0){
+                    enemy_y[0] = enemy_y[0] ^ (char) bullet_y_g;
+                    bullet_live = 0;
+                    bullet_x_g = 0;
+                    bullet_y_g = 0;
+                    to_display_g = 1;
+                    score += 10;
+                }
+            }
+            if(bullet_x_g == enemy_x[1]){
+                if((bullet_y_g & enemy_y[1]) != 0){
+                    enemy_y[1] = enemy_y[1] ^ (char) bullet_y_g;
+                    bullet_live = 0;
+                    bullet_x_g = 0;
+                    bullet_y_g = 0;
+                    to_display_g = 1;
+                    score += 10;
+                }
+            }
+            if(bullet_x_g == enemy_x[2]){
+                if((bullet_y_g & enemy_y[2]) != 0){
+                    enemy_y[2] = enemy_y[2] ^ (char) bullet_y_g;
+                    bullet_live = 0;
+                    bullet_x_g = 0;
+                    bullet_y_g = 0;
+                    to_display_g = 1;
+                    score += 10;
+                }
+            }
+            break;
+        case SM6_pause:
+            break;
+        default:
+            break;
+    }
+    return state;
+}
+
+enum SM7_States{SM7_init, SM7_wait, SM7_update, SM7_display_off};
+
+int SMTick7(int state){
+    switch(state){
+        case SM7_init:
+            state = SM7_wait;
+            break;
+        case SM7_wait:
+            if(to_display_g){
+                state = SM7_update;    
+            }
+            break;
+        case SM7_update:
+            state = SM7_wait;
+            break;
+        case SM7_display_off:
+            state = SM7_display_off;
+            break;
+        default:
+            state = SM7_init;
+            break;
+    }
+    switch(state){
+        case SM7_init:
+            break;
+        case SM7_wait:
+            break;
+        case SM7_update:
+            LCD_WriteData(score);
+            break;
+        case SM7_display_off:
+            break;
+        default:
+            break;
+    }
+    return state;
+}
+
 int main(void){
     
     DDRA = 0x03; PORTA = 0xFC; // LCD Control Lines
@@ -274,17 +413,21 @@ int main(void){
     DDRC = 0x0F; PORTC = 0xF0; // Keypad Input
     DDRD = 0xFF; PORTD = 0x00; // LCD Data lines
     
-    unsigned long int SMTick1_calc = 75;
-    unsigned long int SMTick2_calc = 50;
-    unsigned long int SMTick3_calc = 50;
+    unsigned long int SMTick1_calc = 10;
+    unsigned long int SMTick2_calc = 10;
+    unsigned long int SMTick3_calc = 25;
     unsigned long int SMTick4_calc = 75;
-    unsigned long int SMTick5_calc = 100;
+    unsigned long int SMTick5_calc = 150;
+    unsigned long int SMTick6_calc = 10;
+    unsigned long int SMTick7_calc = 10;
 
     unsigned long int tmpGCD = 1;
     tmpGCD = findGCD(SMTick1_calc, SMTick2_calc);
     tmpGCD = findGCD(SMTick3_calc, tmpGCD);
     tmpGCD = findGCD(SMTick4_calc, tmpGCD);
     tmpGCD = findGCD(SMTick5_calc, tmpGCD);
+    tmpGCD = findGCD(SMTick6_calc, tmpGCD);
+    tmpGCD = findGCD(SMTick7_calc, tmpGCD);
     
     unsigned long int GCD = tmpGCD;
      
@@ -293,10 +436,12 @@ int main(void){
     unsigned long int SMTick3_period = SMTick3_calc/GCD;
     unsigned long int SMTick4_period = SMTick4_calc/GCD;
     unsigned long int SMTick5_period = SMTick5_calc/GCD;
+    unsigned long int SMTick6_period = SMTick6_calc/GCD;
+    unsigned long int SMTick7_period = SMTick7_calc/GCD;
 
     //Array of task pointers...
-    static task task1, task2, task3, task4, task5;
-    task *tasks[] = {&task1, &task2, &task3, &task4, &task5};
+    static task task1, task2, task3, task4, task5, task6, task7;
+    task *tasks[] = {&task1, &task2, &task3, &task4, &task5, &task6, &task7};
     const unsigned short numTasks =
     sizeof(tasks)/sizeof(task*);
     
@@ -325,10 +470,19 @@ int main(void){
     task5.period = SMTick5_period;
     task5.elapsedTime = SMTick5_period;
     task5.TickFct = &SMTick5;
-        
+
+    task6.state = -1;
+    task6.period = SMTick6_period;
+    task6.elapsedTime = SMTick6_period;
+    task6.TickFct = &SMTick6;
+
+    task7.state = -1;
+    task7.period = SMTick7_period;
+    task7.elapsedTime = SMTick7_period;
+    task7.TickFct = &SMTick7;
 
     TimerSet(GCD);
-    //5LCD_init();
+    LCD_init();
     TimerOn();
     unsigned short i;
     
