@@ -78,8 +78,6 @@ unsigned char left_button_g = 0; // The left movement button, pin A5
 unsigned char right_button_g = 0; // The right movement button, pin A6
 
 //Row/Col variables, track enemy, player, shots.
-unsigned char enemy_rows_g = 0;
-unsigned char enemy_cols_g = 0;
 unsigned char col_g = 1;
 unsigned char row_g = 1;
 
@@ -91,8 +89,8 @@ unsigned char bullet_y_g = 0; // If I shift a char it becomes 0
 unsigned char shoot_button_g = 0;
 unsigned char bullet_live = 0; //If the bullet is on the board.
 
-unsigned char enemy_x[3] = {0}; //The enemy rows
-unsigned char enemy_y[3] = {0}; // The enemies columns
+unsigned char enemy_col[3] = {0}; //The enemy rows
+unsigned char enemy_row[3] = {0}; // The enemies columns
 unsigned char move_left = 0;
 unsigned char move_right = 0;
 
@@ -149,7 +147,7 @@ int SMTick2(int state){
             transmit_data_cols(col_g);
             transmit_data_cols(~bullet_x_g);
             transmit_data_rows(bullet_y_g);
-            
+ 
             break;
         default:
             break;
@@ -287,8 +285,8 @@ int SMTick6(int state){
             state = SM6_spawn;
             break;
         case SM6_spawn:
-            enemy_x[0] = 32; enemy_x[1] = 64; enemy_x[2] = 128;
-            enemy_y[0] = 126; enemy_y[1] = 126; enemy_y[2] = 126;
+            enemy_row[0] = 32; enemy_row[1] = 64; enemy_row[2] = 128;
+            enemy_col[0] = 126; enemy_col[1] = 126; enemy_col[2] = 126;
             if(paused_g == 1){
                 state = SM6_pause;
             }
@@ -325,38 +323,40 @@ int SMTick6(int state){
                 
             }
             transmit_data_rows(0);
-            transmit_data_cols(~enemy_y[0]);
-            transmit_data_cols(~enemy_y[1]);
-            transmit_data_cols(~enemy_y[2]);
-            transmit_data_rows(enemy_x[0] | enemy_x[1] | enemy_x[2]);
-            if(bullet_x_g == enemy_x[0]){
-                if((bullet_y_g & enemy_y[0]) != 0){
-                    enemy_y[0] = enemy_y[0] ^ (char) bullet_y_g;
+            transmit_data_cols(~enemy_col[0]);
+            transmit_data_rows(enemy_row[0]);
+            transmit_data_cols(~enemy_col[1]);
+            transmit_data_rows(enemy_row[1]);
+            transmit_data_cols(~enemy_col[2]);
+            transmit_data_rows(enemy_row[2]);
+            if(bullet_y_g == enemy_row[0]){
+                if((bullet_x_g & enemy_col[0]) != 0){
+                    enemy_col[0] = enemy_col[0] ^ (char) bullet_x_g;
                     bullet_live = 0;
                     bullet_x_g = 0;
                     bullet_y_g = 0;
                     to_display_g = 1;
-                    score += 10;
+                    score += 1;
                 }
             }
-            if(bullet_x_g == enemy_x[1]){
-                if((bullet_y_g & enemy_y[1]) != 0){
-                    enemy_y[1] = enemy_y[1] ^ (char) bullet_y_g;
+            if(bullet_y_g == enemy_row[1]){
+                if((bullet_x_g & enemy_col[1]) != 0){
+                    enemy_col[1] = enemy_col[1] ^ (char) bullet_x_g;
                     bullet_live = 0;
                     bullet_x_g = 0;
                     bullet_y_g = 0;
                     to_display_g = 1;
-                    score += 10;
+                    score += 1;
                 }
             }
-            if(bullet_x_g == enemy_x[2]){
-                if((bullet_y_g & enemy_y[2]) != 0){
-                    enemy_y[2] = enemy_y[2] ^ (char) bullet_y_g;
+            if(bullet_y_g == enemy_row[2]){
+                if((bullet_x_g & enemy_col[2]) != 0){
+                    enemy_col[2] = enemy_col[2] ^ (char) bullet_x_g;
                     bullet_live = 0;
                     bullet_x_g = 0;
                     bullet_y_g = 0;
                     to_display_g = 1;
-                    score += 10;
+                    score += 1;
                 }
             }
             break;
