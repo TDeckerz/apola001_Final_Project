@@ -13,6 +13,7 @@
 #include "/includes/keypad.c"
 #include "/includes/timer.h"
 #include <avr/io.h>
+#include <avr/eeprom.h>
 
 unsigned long int findGCD(unsigned long a,
                           unsigned long b)
@@ -28,6 +29,22 @@ unsigned long int findGCD(unsigned long a,
     }
     return 0;
 }
+
+unsigned char* char_to_string(unsigned char val, unsigned char string[])
+{
+    char const nums[] = "0123456789";
+    unsigned char* num = string;
+    int divisor = 100;
+    int i;
+    for(i = 0; val; ++i){
+        num[i] = nums[val / divisor];
+        val = val%divisor;
+        divisor = divisor/10;
+    }
+    num[i] = '\0';
+    return num;
+}
+
 
 void transmit_data_cols(unsigned char data) {
     int i;
@@ -73,7 +90,7 @@ typedef struct task {
 //Button Variables
 unsigned char off_button_g = 0; //The power switch, pin A2
 unsigned char start_button_g = 0; // The start button, pin A3
-unsigned char pause_button_g = 0; // The pause button, pin A4
+unsigned char reset_button_g = 0; // The pause button, pin A4
 unsigned char left_button_g = 0; // The left movement button, pin A5
 unsigned char right_button_g = 0; // The right movement button, pin A6
 
@@ -82,7 +99,7 @@ unsigned char col_g = 1;
 unsigned char row_g = 1;
 
 //Player and enemy positions
-unsigned char player_pos_g = 1; //The player is locked to row 1, keep track of current col
+unsigned char player_pos_g = 0x08; //The player is locked to row 1, keep track of current col
 
 unsigned char bullet_x_g = 0; //There is a maximum of 5 bullets for the player at any time
 unsigned char bullet_y_g = 0; // If I shift a char it becomes 0
@@ -97,11 +114,19 @@ unsigned char move_right = 0;
 //game state, score, displays
 unsigned char paused_g = 0;
 unsigned char score = 0;
+unsigned char game_over_g= 0;
+unsigned char string_score[5] = {0};
 unsigned char to_display_g;
+unsigned char score_line[] = "Score: ";
+unsigned char new_score[] = "New Hi-Score:";
+unsigned char high_score;
+unsigned char game_over_low[] = "GAME OVER";
+unsigned char game_over_high[] = "New Hi-Score";
 
 enum SM1_States { SM1_init, SM1_wait};
 
 int SMTick1(int state){
+static uint8_t ByteOfData = 46;
     switch(state){
         case SM1_init:
             state = SM1_wait;
@@ -114,10 +139,19 @@ int SMTick1(int state){
             break;
     }
     switch(state){
-	        case SM1_init:
+	    case SM1_init:
+            high_score = eeprom_read_byte((uint8_t*)ByteOfData);
             break;
         case SM1_wait:
-
+            if((enemy_row[0] | enemy_row[1] | enemy_row[2])  == 0){
+                if(score > high_score){
+                    eeprom_update_byte((uint8_t *)ByteOfData, (uint8_t)score);
+                    LCD_DisplayString(1, new_score);
+                }             
+            }
+            if(game_over_g && reset_button_g){
+                game_over_g = 0;
+            }
             break;
         default:
              break;
@@ -145,9 +179,19 @@ int SMTick2(int state){
             col_g = ~(player_pos_g);
             transmit_data_rows(row_g);
             transmit_data_cols(col_g);
-            transmit_data_cols(~bullet_x_g);
+            delay();
             transmit_data_rows(bullet_y_g);
- 
+            transmit_data_cols(~bullet_x_g);
+            delay();
+            transmit_data_rows(enemy_row[0]);
+            transmit_data_cols(~enemy_col[0]);
+            delay();
+            transmit_data_rows(enemy_row[1]);
+            transmit_data_cols(~enemy_col[1]);
+            delay();
+            transmit_data_rows(enemy_row[2]);
+            transmit_data_cols(~enemy_col[2]);
+            delay();
             break;
         default:
             break;
@@ -163,6 +207,9 @@ int SMTick3(int state){
             state = SM3_no_press;
             break;
         case SM3_no_press:
+            if(bullet_live){
+                break;
+            }
             if(left_button_g){
                 state = SM3_left;
                 if(player_pos_g < 128){
@@ -227,7 +274,7 @@ int SMTick4(int state){
         case SM4_get_inputs:
             off_button_g = ~PINA & 0x04;
             start_button_g = ~PINA & 0x08;
-            pause_button_g = ~PINA & 0x10;
+            reset_button_g = ~PINA & 0x10;
             left_button_g = ~PINA & 0x20;
             right_button_g = ~PINA & 0x40;
             shoot_button_g = ~PINA & 0x80;
@@ -247,6 +294,9 @@ int SMTick5(int state){
             state = SM5_track_shot;
             break;
         case SM5_track_shot:
+            if(reset_button_g){
+                state = SM5_init;
+            }
             state = SM5_track_shot;
             break;
         default:
@@ -270,65 +320,8 @@ int SMTick5(int state){
                 bullet_y_g = 0;
                 bullet_live = 0;
             }
-            break;
-        default:
-            break;
-    }
-    return state;
-};
-
-enum SM6_States {SM6_init, SM6_spawn, SM6_move, SM6_pause};
-
-int SMTick6(int state){
-    switch(state){
-        case SM6_init:
-            state = SM6_spawn;
-            break;
-        case SM6_spawn:
-            enemy_row[0] = 32; enemy_row[1] = 64; enemy_row[2] = 128;
-            enemy_col[0] = 126; enemy_col[1] = 126; enemy_col[2] = 126;
-            if(paused_g == 1){
-                state = SM6_pause;
-            }
-            state = SM6_move;
-            break;
-        case SM6_move:
-            if(paused_g){
-                state = SM6_pause;
-            }
-            break;
-        case SM6_pause:
-            if(paused_g == 1){
-                state = SM6_pause;
-            }
-            else{
-                state = SM6_move;
-            }
-            break;
-        default:
-            state = SM6_init;
-            break;
-    }
-
-    switch (state){
-        case SM6_init:
-            break;
-        case SM6_spawn:
-            move_left = 1; // Begin shifting left.
-            break;
-        case SM6_move:
+            //Since the bullet is faster than the enemies, collision is checked here.
             to_display_g = 0;
-            int i;
-            for(i = 0; i < 3; ++i){
-                
-            }
-            transmit_data_rows(0);
-            transmit_data_cols(~enemy_col[0]);
-            transmit_data_rows(enemy_row[0]);
-            transmit_data_cols(~enemy_col[1]);
-            transmit_data_rows(enemy_row[1]);
-            transmit_data_cols(~enemy_col[2]);
-            transmit_data_rows(enemy_row[2]);
             if(bullet_y_g == enemy_row[0]){
                 if((bullet_x_g & enemy_col[0]) != 0){
                     enemy_col[0] = enemy_col[0] ^ (char) bullet_x_g;
@@ -336,7 +329,7 @@ int SMTick6(int state){
                     bullet_x_g = 0;
                     bullet_y_g = 0;
                     to_display_g = 1;
-                    score += 1;
+                    score += 10;
                 }
             }
             if(bullet_y_g == enemy_row[1]){
@@ -359,8 +352,125 @@ int SMTick6(int state){
                     score += 1;
                 }
             }
+            if(reset_button_g){
+                score = 0;
+            }
+            break;
+        default:
+            break;
+    }
+    return state;
+};
+
+enum SM6_States {SM6_init, SM6_spawn, SM6_move, SM6_pause, SM6_game_over};
+
+int SMTick6(int state){
+    static unsigned char enemy_or_cols = 0;
+    switch(state){
+        case SM6_init:
+            state = SM6_spawn;
+            break;
+        case SM6_spawn:
+            enemy_row[0] = 32; enemy_row[1] = 64; enemy_row[2] = 128;
+            enemy_col[0] = 126; enemy_col[1] = 126; enemy_col[2] = 126;
+            if(paused_g == 1){
+                state = SM6_pause;
+            }
+            state = SM6_move;
+            break;
+        case SM6_move:
+            if(reset_button_g){
+                state = SM6_spawn;
+            }
+            if(paused_g){
+                state = SM6_pause;
+            }
+            if(game_over_g){
+                state = SM6_game_over;
+            }
             break;
         case SM6_pause:
+            if(reset_button_g){
+                state = SM6_spawn;
+            }
+            if(paused_g == 1){
+                state = SM6_pause;
+            }
+            else{
+                state = SM6_move;
+            }
+            break;
+        case SM6_game_over:
+            if(reset_button_g){
+                state = SM6_spawn;
+            }
+            break;
+        default:
+            state = SM6_init;
+            break;
+    }
+
+    switch (state){
+        case SM6_init:
+            break;
+        case SM6_spawn:
+            move_left = 0; // Begin shifting left.
+            move_right = 1;
+            break;
+        case SM6_move:
+            enemy_or_cols = enemy_col[0] | enemy_col[1] | enemy_col[2];
+            if(!enemy_or_cols){ //If there are no more enemies on the field.
+                game_over_g = 1;
+                break;
+            }
+            //alien movement;
+            if(move_right){
+                if(!(enemy_or_cols & 0x01)){ // If there are no aliens on the rightmost column...
+                    enemy_col[0] = enemy_col[0] >> 1;
+                    enemy_col[1] = enemy_col[1] >> 1;
+                    enemy_col[2] = enemy_col[2] >> 1;
+                }
+                else{ // If there are aliens on the rightmost column
+                    move_right = 0;
+                    move_left = 1; // begin moving left
+                    enemy_row[0] = enemy_row[0] >> 1;
+                    enemy_row[1] = enemy_row[1] >> 1;
+                    enemy_row[2] = enemy_row[2] >> 1; // and move the aliens up a row.
+                }
+            }
+            else if(move_left){
+                if(!(enemy_or_cols & 0x80)){ // If there are no enemies on the leftmost column
+                    enemy_col[0] = enemy_col[0] << 1;
+                    enemy_col[1] = enemy_col[1] << 1;
+                    enemy_col[2] = enemy_col[2] << 1;
+                }
+                else{ // Otherwise move forward.
+                    move_right = 1;
+                    move_left = 0; // begin moving left
+                    enemy_row[0] = enemy_row[0] >> 1;
+                    enemy_row[1] = enemy_row[1] >> 1;
+                    enemy_row[2] = enemy_row[2] >> 1; // and move the aliens up a row.
+                }
+            }
+            if(enemy_row[0] == 1){
+                if(enemy_col[0] != 0){
+                    game_over_g= 1;
+                }
+            }
+            if(enemy_row[1] == 1){
+                if(enemy_col[1] != 0){
+                    game_over_g= 1;
+                }
+            }
+            if(enemy_row[2] == 1){
+                if(enemy_col[2] != 0){
+                    game_over_g= 1;
+                }
+            }
+            break;
+        case SM6_pause:
+            break;
+        case SM6_game_over:
             break;
         default:
             break;
@@ -368,7 +478,7 @@ int SMTick6(int state){
     return state;
 }
 
-enum SM7_States{SM7_init, SM7_wait, SM7_update, SM7_display_off};
+enum SM7_States{SM7_init, SM7_wait, SM7_update, SM7_display_off, SM7_game_over};
 
 int SMTick7(int state){
     switch(state){
@@ -379,6 +489,15 @@ int SMTick7(int state){
             if(to_display_g){
                 state = SM7_update;    
             }
+            if(game_over_g){
+                 if(score < high_score){
+                    LCD_DisplayString(1, game_over_low);
+                }
+                else{
+                    LCD_DisplayString(1, game_over_high);
+                }
+                state = SM7_game_over;
+            }
             break;
         case SM7_update:
             state = SM7_wait;
@@ -386,19 +505,30 @@ int SMTick7(int state){
         case SM7_display_off:
             state = SM7_display_off;
             break;
+        case SM7_game_over:
+            if(reset_button_g){
+                state = SM7_init;
+                LCD_ClearScreen();
+            }
+            break;
         default:
             state = SM7_init;
             break;
     }
     switch(state){
         case SM7_init:
+            LCD_DisplayString(1, score_line);
             break;
         case SM7_wait:
             break;
-        case SM7_update:
-            LCD_WriteData(score);
+        case SM7_update: ;
+            char_to_string(score, string_score);
+            LCD_DisplayString_NoClear(17, string_score);
+            to_display_g = 0;
             break;
         case SM7_display_off:
+            break;
+        case SM7_game_over:
             break;
         default:
             break;
@@ -407,18 +537,18 @@ int SMTick7(int state){
 }
 
 int main(void){
-    
+
     DDRA = 0x03; PORTA = 0xFC; // LCD Control Lines
     DDRB = 0xFF; PORTB = 0x00;
     DDRC = 0x0F; PORTC = 0xF0; // Keypad Input
     DDRD = 0xFF; PORTD = 0x00; // LCD Data lines
     
     unsigned long int SMTick1_calc = 10;
-    unsigned long int SMTick2_calc = 10;
+    unsigned long int SMTick2_calc = 1;
     unsigned long int SMTick3_calc = 25;
-    unsigned long int SMTick4_calc = 75;
-    unsigned long int SMTick5_calc = 150;
-    unsigned long int SMTick6_calc = 10;
+    unsigned long int SMTick4_calc = 30;
+    unsigned long int SMTick5_calc = 10;
+    unsigned long int SMTick6_calc = 500;
     unsigned long int SMTick7_calc = 10;
 
     unsigned long int tmpGCD = 1;
@@ -496,7 +626,7 @@ int main(void){
               }
                tasks[i]->elapsedTime += 1;
         }
-         while(!TimerFlag);
+        while(!TimerFlag);
         TimerFlag = 0;
     }
     //Error
