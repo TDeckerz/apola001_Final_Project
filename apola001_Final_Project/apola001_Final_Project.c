@@ -126,13 +126,20 @@ unsigned char score_line[] = "Score: ";
 
 unsigned char game_over_low[] = "GAME OVER";
 unsigned char game_over_high[] = "New Hi-Score!";
-unsigned char current_high[] = "Cur Hi-Score:";
 unsigned char hi_score_string[4] = {0};
 unsigned char display_low_or_high = 0; //choose the appropriate string in a game over.
+
+//Pause menu strings
+unsigned char current_high[] = "Cur Hi-Score:";
+unsigned char more_string[] = "More";
+unsigned char second_pause[] = "Speed Enemies?";
+unsigned char second_pause2[] = "Fire to toggle between 3";
+unsigned char scroll_down = 25; // Arrow pointing downwards;
 
 //EEPROM values.
 uint8_t EEMEM ScoreChar = 1;
 uint8_t high_score;
+
 
 enum SM1_States { SM1_init, SM1_wait};
 
@@ -154,11 +161,10 @@ int SMTick1(int state){
             high_score = eeprom_read_byte(&ScoreChar);
             break;
         case SM1_wait:
-            if((enemy_row[0] | enemy_row[1] | enemy_row[2])  == 0){
+            if(game_over_g){
                 if(score > high_score){
                     display_low_or_high = 1;
                     high_score = (uint8_t) score;
-                    LCD_DisplayString_NoClear(17, (char)high_score);
                     eeprom_update_byte(&ScoreChar, high_score);
                 }
                 else{
@@ -166,7 +172,7 @@ int SMTick1(int state){
                 }
             }
 
-            if(paused_g && shoot_button_g){
+            if((paused_g == 1) && shoot_button_g){
                 high_score = 0;
                 eeprom_update_byte(&ScoreChar, high_score);
             }
@@ -325,8 +331,11 @@ int SMTick4(int state){
             }
             
             //If the game is paused and the player moves, unpause.
-            if(paused_g &&(left_button_g || right_button_g)){
+            if((paused_g) && (left_button_g || right_button_g)){
                 paused_g = 0;
+            }
+            if((paused_g == 1) && start_button_g){
+                paused_g = 2;
             }
             break;
         default:
@@ -356,6 +365,9 @@ int SMTick5(int state){
             if(!paused_g){
                 state = SM5_track_shot;
             }
+            if(!game_over_g){
+                state = SM5_init;
+            }
             break;
         default:
             state = SM5_init;
@@ -365,7 +377,7 @@ int SMTick5(int state){
         case SM5_init:
             break;
         case SM5_track_shot:
-            if(paused_g){
+            if(paused_g || game_over_g){
                 break;
             }
             if(!bullet_live && shoot_button_g){ //If there is no bu
@@ -390,7 +402,7 @@ int SMTick5(int state){
                     bullet_x_g = 0;
                     bullet_y_g = 0;
                     to_display_g = 1;
-                    score += 10;
+                    score += 1;
                 }
             }
             if(bullet_y_g == enemy_row[1]){
@@ -400,7 +412,7 @@ int SMTick5(int state){
                     bullet_x_g = 0;
                     bullet_y_g = 0;
                     to_display_g = 1;
-                    score += 1;
+                    score += 5;
                 }
             }
             if(bullet_y_g == enemy_row[2]){
@@ -410,11 +422,13 @@ int SMTick5(int state){
                     bullet_x_g = 0;
                     bullet_y_g = 0;
                     to_display_g = 1;
-                    score += 1;
+                    score += 10;
                 }
             }
             if(reset_button_g){
-                score = 0;
+                bullet_live = 0;
+                bullet_x_g = 0;
+                bullet_y_g = 0;
             }
             break;
         case SM5_paused:
@@ -435,12 +449,13 @@ int SMTick6(int state){
         case SM6_spawn:
             enemy_row[0] = 32; enemy_row[1] = 64; enemy_row[2] = 128;
             enemy_col[0] = 252; enemy_col[1] = 252; enemy_col[2] = 252;
-            if(paused_g == 1){
+            state = SM6_move;
+            if(paused_g){
                 state = SM6_pause;
             }
-            state = SM6_move;
             break;
         case SM6_move:
+            state = SM6_move;
             if(reset_button_g){
                 state = SM6_spawn;
             }
@@ -452,14 +467,12 @@ int SMTick6(int state){
             }
             break;
         case SM6_pause:
-            if(to_reset_g){
-                state = SM6_spawn;
-            }
-            if(paused_g == 1){
+            state = SM6_move;
+            if(paused_g){
                 state = SM6_pause;
             }
-            else{
-                state = SM6_move;
+            if(to_reset_g){
+                state = SM6_spawn;
             }
             break;
         case SM6_game_over:
@@ -476,6 +489,7 @@ int SMTick6(int state){
         case SM6_init:
             break;
         case SM6_spawn:
+            score = 0;
             move_left = 0; // Begin shifting left.
             move_right = 1;
             break;
@@ -540,7 +554,7 @@ int SMTick6(int state){
     return state;
 }
 
-enum SM7_States{SM7_init, SM7_wait, SM7_update, SM7_display_off, SM7_game_over, SM7_paused};
+enum SM7_States{SM7_init, SM7_wait, SM7_update, SM7_display_off, SM7_game_over, SM7_paused1,SM7_paused2 };
 
 int SMTick7(int state){
     switch(state){
@@ -548,14 +562,21 @@ int SMTick7(int state){
             state = SM7_wait;
             break;
         case SM7_wait:
+            if(to_reset_g){
+                state = SM7_init;
+                LCD_ClearScreen();
+            }
             if(to_display_g){
                 state = SM7_update;    
             }
-            if(paused_g){
+            if(paused_g == 1){
                 char_to_string((char)high_score, hi_score_string);
                 LCD_DisplayString(1, current_high);
-                LCD_DisplayString_NoClear(17, hi_score_string);
-                state = SM7_paused;
+                LCD_DisplayString_NoClear(14, hi_score_string);
+                LCD_DisplayString_NoClear(17, more_string);
+                LCD_Cursor(25);
+                LCD_WriteData(scroll_down);
+                state = SM7_paused1;
             }            
             
             if(game_over_g){
@@ -564,7 +585,8 @@ int SMTick7(int state){
                 }
                 else{
                     LCD_DisplayString(1, game_over_high);
-                    LCD_DisplayString_NoClear(17, score);
+                    char_to_string(score, string_score);
+                    LCD_DisplayString_NoClear(17, string_score);
                 }
                 state = SM7_game_over;
             }
@@ -581,7 +603,16 @@ int SMTick7(int state){
                 LCD_ClearScreen();
             }
             break;
-        case SM7_paused:
+        case SM7_paused1:
+            if(!paused_g){
+                state = SM7_init;
+            }
+            if(paused_g == 2){
+                state = SM7_paused2;
+                
+            }
+            break;
+        case SM7_paused2:
             if(!paused_g){
                 state = SM7_init;
             }
@@ -592,7 +623,9 @@ int SMTick7(int state){
     }
     switch(state){
         case SM7_init:
+            char_to_string(score, string_score);
             LCD_DisplayString(1, score_line);
+            LCD_DisplayString_NoClear(17, string_score);
             break;
         case SM7_wait:
             break;
@@ -605,7 +638,9 @@ int SMTick7(int state){
             break;
         case SM7_game_over:
             break;
-        case SM7_paused:
+        case SM7_paused1:
+            break;
+        case SM7_paused2:
             break;
         default:
             break;
@@ -624,7 +659,7 @@ int main(void){
     unsigned long int SMTick2_calc = 1;
     unsigned long int SMTick3_calc = 50;
     unsigned long int SMTick4_calc = 50;
-    unsigned long int SMTick5_calc = 60;
+    unsigned long int SMTick5_calc = 50;
     unsigned long int SMTick6_calc = 500;
     unsigned long int SMTick7_calc = 10;
 
