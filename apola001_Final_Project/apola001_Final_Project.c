@@ -111,9 +111,11 @@ unsigned char enemy_row[3] = {0}; // The enemies columns
 unsigned char move_left = 0;
 unsigned char move_right = 0;
 unsigned char enemy_or_cols_g = 0;
+unsigned char enemy_speed_g = 0;
 
 //game state, score, displays
 unsigned char paused_g = 0;
+unsigned char paused_scroll_g = 0;
 unsigned char to_reset_g = 0;
 unsigned char game_over_g= 0;
 unsigned char to_display_g;
@@ -131,10 +133,10 @@ unsigned char display_low_or_high = 0; //choose the appropriate string in a game
 
 //Pause menu strings
 unsigned char current_high[] = "Cur Hi-Score:";
-unsigned char more_string[] = "More";
-unsigned char second_pause[] = "Speed Enemies?";
-unsigned char second_pause2[] = "Fire to toggle between 3";
-unsigned char scroll_down = 25; // Arrow pointing downwards;
+unsigned char more_string[] = "More, hold 4";
+unsigned char second_pause[] = "Enemy Speed: Slow - 5 Fast - 6 ";
+unsigned char second_pause2[] = "";
+unsigned char paginate[16];
 
 //EEPROM values.
 uint8_t EEMEM ScoreChar = 1;
@@ -183,13 +185,22 @@ int SMTick1(int state){
     return state;
 }
 
-enum SM2_States { SM2_init, SM2_display };
+enum SM2_States { SM2_init, SM2_display, SM2_display_off };
 
 int SMTick2(int state){
     switch(state){
         case SM2_init:
             state = SM2_display;
-            state = SM2_display;
+            break;
+        case SM2_display:
+            if(paused_g){
+                state = SM2_display_off;
+            }
+            break;
+        case SM2_display_off:
+            if(!paused_g){
+                state = SM2_display;
+            }
             break;
         default:
             state = SM2_init;
@@ -216,6 +227,10 @@ int SMTick2(int state){
             transmit_data_rows(enemy_row[2]);
             transmit_data_cols(~enemy_col[2]);
             delay();
+            break;
+        case SM2_display_off:
+            transmit_data_rows(0);
+            transmit_data_cols(255);
             break;
         default:
             break;
@@ -291,6 +306,8 @@ int SMTick3(int state){
 enum SM4_States {SM4_init, SM4_get_inputs};
 
 int SMTick4(int state){
+    static unsigned char keypadVal;
+    static unsigned char setEnemySpeed = 0;
     switch(state){ //Begin state transitions for SM4, grabbing inputs.
         case SM4_init:
             state = SM4_get_inputs;
@@ -307,16 +324,28 @@ int SMTick4(int state){
         case SM4_init:
             break;
         case SM4_get_inputs:
-            off_button_g = ~PINA & 0x04;
-            start_button_g = ~PINA & 0x08;
-            reset_button_g = ~PINA & 0x10;
-            left_button_g = ~PINA & 0x20;
-            right_button_g = ~PINA & 0x40;
-            shoot_button_g = ~PINA & 0x80;
+            //zero all buttons
+            off_button_g = 0;
+            start_button_g = 0;
+            reset_button_g = 0;
+            left_button_g = 0;
+            right_button_g = 0;
+            shoot_button_g = 0;
+            paused_scroll_g = 0;
             
-            if(to_reset_g){
-                to_reset_g = 0;
-            }
+            //Get the value from the keypad
+            keypadVal = GetKeypadKey();
+            if(keypadVal == '1'){ right_button_g = 1;}
+            else if(keypadVal == '2'){ shoot_button_g = 1;}
+            else if(keypadVal == '3'){ left_button_g = 1;}
+            else if(keypadVal == 'A'){ start_button_g = 1;}
+
+            else if(keypadVal == '4'){ paused_scroll_g = 1;}
+            else if(keypadVal == '5'){ setEnemySpeed = 0;}
+            else if(keypadVal == '6'){ setEnemySpeed = 1;}
+            else if(keypadVal == 'B'){ reset_button_g = 1;}
+            
+            to_reset_g = 0;
             // If the game is not paused, reset is pressed and it was not already being reset
             if(reset_button_g && !to_reset_g){ 
                 game_over_g = 0; // set game over to 0
@@ -334,9 +363,16 @@ int SMTick4(int state){
             if((paused_g) && (left_button_g || right_button_g)){
                 paused_g = 0;
             }
-            if((paused_g == 1) && start_button_g){
+            if((paused_g == 1) && paused_scroll_g){
                 paused_g = 2;
             }
+            if((paused_g == 2) && !setEnemySpeed){
+                enemy_speed_g = 0;
+            }
+            else if((paused_g == 2) && setEnemySpeed){
+                enemy_speed_g = 1;
+            }
+
             break;
         default:
             break;
@@ -403,6 +439,9 @@ int SMTick5(int state){
                     bullet_y_g = 0;
                     to_display_g = 1;
                     score += 1;
+                    if(enemy_speed_g){
+                        score += 2;
+                    }
                 }
             }
             if(bullet_y_g == enemy_row[1]){
@@ -413,6 +452,9 @@ int SMTick5(int state){
                     bullet_y_g = 0;
                     to_display_g = 1;
                     score += 5;
+                    if(enemy_speed_g){
+                        score += 3;
+                    }
                 }
             }
             if(bullet_y_g == enemy_row[2]){
@@ -423,6 +465,9 @@ int SMTick5(int state){
                     bullet_y_g = 0;
                     to_display_g = 1;
                     score += 10;
+                    if(enemy_speed_g){
+                        score += 10;
+                    }
                 }
             }
             if(reset_button_g){
@@ -557,6 +602,8 @@ int SMTick6(int state){
 enum SM7_States{SM7_init, SM7_wait, SM7_update, SM7_display_off, SM7_game_over, SM7_paused1,SM7_paused2 };
 
 int SMTick7(int state){
+    static unsigned char posBegin = 0;
+    static unsigned char posEnd = 16;
     switch(state){
         case SM7_init:
             state = SM7_wait;
@@ -574,8 +621,6 @@ int SMTick7(int state){
                 LCD_DisplayString(1, current_high);
                 LCD_DisplayString_NoClear(14, hi_score_string);
                 LCD_DisplayString_NoClear(17, more_string);
-                LCD_Cursor(25);
-                LCD_WriteData(scroll_down);
                 state = SM7_paused1;
             }            
             
@@ -607,14 +652,18 @@ int SMTick7(int state){
             if(!paused_g){
                 state = SM7_init;
             }
-            if(paused_g == 2){
+            if(paused_g > 1){
                 state = SM7_paused2;
-                
+                LCD_DisplayString(1, second_pause);
+                LCD_DisplayString_NoClear(17, second_pause2);
             }
             break;
         case SM7_paused2:
             if(!paused_g){
                 state = SM7_init;
+            }
+            if(paused_g == 1){
+                state = SM7_paused1;
             }
             break;
         default:
@@ -641,6 +690,18 @@ int SMTick7(int state){
         case SM7_paused1:
             break;
         case SM7_paused2:
+            for(int i = posBegin, j = 0; i < posEnd; ++i, ++j){
+                paginate[j] = second_pause[i];
+            }
+            LCD_DisplayString(1, paginate);
+            ++posBegin;
+            if(second_pause[posEnd] != '\0' ){
+                ++posEnd;
+            }
+            if(second_pause[posBegin] == '\0'){
+                posBegin = 0;
+                posEnd = 16;
+            }  
             break;
         default:
             break;
@@ -650,17 +711,18 @@ int SMTick7(int state){
 
 int main(void){
 
-    DDRA = 0x03; PORTA = 0xFC; // LCD Control Lines
+    //DDRA = 0x03; PORTA = 0xFC; // LCD Control Lines
+    DDRA = 0x3F; PORTA = 0xC0; //LCD Control lines, Keypad.
     DDRB = 0xFF; PORTB = 0x00;
     DDRC = 0x0F; PORTC = 0xF0; // Keypad Input
     DDRD = 0xFF; PORTD = 0x00; // LCD Data lines
     
     unsigned long int SMTick1_calc = 10;
-    unsigned long int SMTick2_calc = 1;
-    unsigned long int SMTick3_calc = 50;
-    unsigned long int SMTick4_calc = 50;
-    unsigned long int SMTick5_calc = 50;
-    unsigned long int SMTick6_calc = 500;
+    unsigned long int SMTick2_calc = 2;
+    unsigned long int SMTick3_calc = 30;
+    unsigned long int SMTick4_calc = 26;
+    unsigned long int SMTick5_calc = 40;
+    unsigned long int SMTick6_calc = 250;
     unsigned long int SMTick7_calc = 10;
 
     unsigned long int tmpGCD = 1;
@@ -684,7 +746,7 @@ int main(void){
     //Array of task pointers...
     static task task1, task2, task3, task4, task5, task6, task7;
     task *tasks[] = {&task1, &task2, &task3, &task4, &task5, &task6, &task7};
-    const unsigned short numTasks =
+    const unsigned short numTasks = 
     sizeof(tasks)/sizeof(task*);
     
     //Initializing the task components
