@@ -246,6 +246,9 @@ int SMTick3(int state){
             state = SM3_no_press;
             break;
         case SM3_no_press:
+            if(reset_button_g){
+                player_pos_g = 0x08;
+            }
             if(paused_g){
                 break;
             }
@@ -487,6 +490,7 @@ int SMTick5(int state){
 enum SM6_States {SM6_init, SM6_spawn, SM6_move, SM6_pause, SM6_game_over};
 
 int SMTick6(int state){
+    static unsigned char i = 0;
     switch(state){
         case SM6_init:
             state = SM6_spawn;
@@ -539,6 +543,11 @@ int SMTick6(int state){
             move_right = 1;
             break;
         case SM6_move:
+            if(enemy_speed_g && !i){
+                ++i;
+                break;
+            }
+            i = 0;
             enemy_or_cols_g = enemy_col[0] | enemy_col[1] | enemy_col[2];
             if(!enemy_or_cols_g){ //If there are no more enemies on the field.
                 game_over_g = 1;
